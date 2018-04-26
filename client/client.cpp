@@ -69,11 +69,16 @@ int Client::sendNumber(int num){
 
     struct Message msg;
     union NumberMsg nm;
+    std::random_device rd;
+    std::uniform_int_distribution<int> dis(0,10000);
+
     nm.num = htonl(num);
     msg.sequenceNum = 1;
-    msg.length = 4;
+    msg.length = 4+HEADERLEN;
+    msg.randomId = dis(rd);
     msg.data.resize(4);
     memcpy(msg.data.data(),nm.dat,4);
+    
     int ret = this->udpSock->sendMsg(msg,(struct sockaddr*)&servAddr);
     if (ret != 0){
         return 1;
@@ -99,7 +104,7 @@ std::vector<char> Client::recvMsg(){
     }
 
     //检测数据长度是否正确
-    if (pkg.msg.length != pkg.msg.data.size()){
+    if (pkg.msg.length != pkg.msg.data.size()+HEADERLEN){
         perror("invalid data!");
         return ans;
     }

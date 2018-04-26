@@ -45,8 +45,8 @@ struct Package Server::recvPkg(){
 }
 
 int Server::sendString(struct Package p){
-    if ((p.msg.length <= 0) || (p.msg.length != 4) || (p.msg.data.size() != 4)){
-        printf("%d\n",p.msg.length);
+    if ((p.msg.length <= HEADERLEN) || (p.msg.length-HEADERLEN != 4) || (p.msg.data.size() != 4)){
+        printf("%d\n",p.msg.length-HEADERLEN);
         printf("%d\n",p.msg.data.size());
         perror("bad package");
         return 1;
@@ -70,7 +70,8 @@ int Server::sendString(struct Package p){
     }
     Message msg;
     msg.sequenceNum = 1;
-    msg.length = l;
+    msg.length = l+HEADERLEN;
+    msg.randomId = p.msg.randomId;
     msg.data = builder;
     if (this->udpSock->sendMsg(msg,(struct sockaddr*)&(p.peerAddr)) == 0){
         return 0;

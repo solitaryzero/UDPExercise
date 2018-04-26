@@ -20,7 +20,7 @@ struct Package UdpSocket::recvMsg(){
         return pkg;
     } 
 
-    if (pkgSize <= MSGOFFSET){  
+    if (pkgSize <= HEADERLEN){  
         perror("invalid package!");  
         pkg.msg.length = -1;
         return pkg;
@@ -28,17 +28,26 @@ struct Package UdpSocket::recvMsg(){
 
     pkg.msg.sequenceNum = ntohl(((int*)buffer)[0]);
     pkg.msg.length = ntohl(((int*)buffer)[1]);
+    pkg.msg.randomId = ntohl(((int*)buffer)[2]);
+    pkg.msg.checkSum = buffer[HEADERLEN-1];
 
-    if (pkg.msg.length != pkgSize-MSGOFFSET){
+    if (pkg.msg.length != pkgSize){
         perror("invalid package!");  
         pkg.msg.length = -1;
         return pkg;
     }
 
     std::vector<char> res;
-    res.resize(pkg.msg.length);
-    memcpy(res.data(), buffer+MSGOFFSET, pkg.msg.length);
+    res.resize(pkg.msg.length-HEADERLEN);
+    memcpy(res.data(), buffer+HEADERLEN, pkg.msg.length-HEADERLEN);
     pkg.msg.data = res;
+
+    if (!examineCheckSum(pkg.msg)){
+        perror("bad checksum!");
+        pkg.msg.length = -1;
+        return pkg;
+    }
+
     pkg.peerAddr = addr;
 
     return pkg;
@@ -54,7 +63,7 @@ struct Package UdpSocket::recvMsg(struct sockaddr* addr){
         return pkg;
     } 
 
-    if (pkgSize <= MSGOFFSET){  
+    if (pkgSize <= HEADERLEN){  
         perror("invalid package!");  
         pkg.msg.length = -1;
         return pkg;
@@ -62,31 +71,43 @@ struct Package UdpSocket::recvMsg(struct sockaddr* addr){
 
     pkg.msg.sequenceNum = ntohl(((int*)buffer)[0]);
     pkg.msg.length = ntohl(((int*)buffer)[1]);
+    pkg.msg.randomId = ntohl(((int*)buffer)[2]);
+    pkg.msg.checkSum = buffer[HEADERLEN-1];
 
-    if (pkg.msg.length != pkgSize-MSGOFFSET){
+    if (pkg.msg.length != pkgSize){
         perror("invalid package!");  
         pkg.msg.length = -1;
         return pkg;
     }
 
     std::vector<char> res;
-    res.resize(pkg.msg.length);
-    memcpy(res.data(), buffer+MSGOFFSET, pkg.msg.length);
+    res.resize(pkg.msg.length-HEADERLEN);
+    memcpy(res.data(), buffer+HEADERLEN, pkg.msg.length-HEADERLEN);
     pkg.msg.data = res;
+
+    if (!examineCheckSum(pkg.msg)){
+        perror("bad checksum!");
+        pkg.msg.length = -1;
+        return pkg;
+    }
+
     pkg.peerAddr = *(struct sockaddr_in*)(addr);
 
     return pkg;
 }
 
 int UdpSocket::sendMsg(struct Message msg, struct sockaddr* addr){
-    if (msg.length >= MAXBUFSIZE-MSGOFFSET){
+    if (msg.length >= MAXBUFSIZE){
         return -2;
     }
 
     ((int*)sendBuffer)[0] = htonl(msg.sequenceNum);
     ((int*)sendBuffer)[1] = htonl(msg.length);
-    memcpy(sendBuffer+MSGOFFSET, msg.data.data(), msg.length);
-    int ret = sendto(sockfd, sendBuffer, msg.length+MSGOFFSET, 0, addr, addrLen);
+    ((int*)sendBuffer)[2] = htonl(msg.randomId);
+    memcpy(sendBuffer+HEADERLEN, msg.data.data(), msg.length-HEADERLEN);
+    ((char*)sendBuffer)[HEADERLEN-1] = genCheckSum(msg);
+
+    int ret = sendto(sockfd, sendBuffer, msg.length, 0, addr, addrLen);
     if (ret == -1){
         perror("sendMsg error!");
         return -1;
@@ -94,11 +115,14 @@ int UdpSocket::sendMsg(struct Message msg, struct sockaddr* addr){
     return 0;
 }
 
-int UdpSocket::sendMsg(int seq, std::string s, struct sockaddr* addr){
+int UdpSocket::sendMsg(int seq, int randomId, std::string s, struct sockaddr* addr){
     ((int*)sendBuffer)[0] = htonl(seq);
-    ((int*)sendBuffer)[1] = htonl(s.length()+1);
-    memcpy(sendBuffer+MSGOFFSET, s.c_str(), s.length()+1);
-    int ret = sendto(sockfd, sendBuffer, s.length()+1+MSGOFFSET, 0, addr, addrLen);
+    ((int*)sendBuffer)[1] = htonl(s.length()+1+HEADERLEN);
+    ((int*)sendBuffer)[2] = htonl(randomId);
+    memcpy(sendBuffer+HEADERLEN, s.c_str(), s.length()+1);
+    ((char*)sendBuffer)[HEADERLEN-1] = genCheckSum(sendBuffer,s.length()+1+HEADERLEN);
+
+    int ret = sendto(sockfd, sendBuffer, s.length()+1+HEADERLEN, 0, addr, addrLen);
     if (ret == -1){
         perror("sendMsg error!");
         return -1;
@@ -118,4 +142,45 @@ int UdpSocket::shutDownSocket(){
 std::string UdpSocket::vectorToString(std::vector<char> input){
     std::string s(input.begin(),input.end());
     return s;
+}
+
+char UdpSocket::genCheckSum(struct Message msg){
+    msg.checkSum = 0;
+    char res = 0;
+    for (int i=0;i<HEADERLEN;i++){
+        res = res ^ ((char*)&msg)[i];
+    }
+
+    int len = msg.length-HEADERLEN;
+    for (int i=0;i<len;i++){
+        res = res ^ msg.data[i];
+    }
+    return res;
+}
+
+char UdpSocket::genCheckSum(char* buf, int len){
+    ((char*)buf)[HEADERLEN-1] = 0;
+    char res = 0;
+    for (int i=0;i<len;i++){
+        res = res ^ buf[i];
+    }
+
+    return res;
+}
+
+bool UdpSocket::examineCheckSum(struct Message msg){
+    char res = 0;
+    for (int i=0;i<HEADERLEN;i++){
+        res = res ^ ((char*)&msg)[i];
+    }
+
+    int len = msg.length-HEADERLEN;
+    for (int i=0;i<len;i++){
+        res = res ^ msg.data[i];
+    }
+    if (res == 0){
+        return true;
+    } else {
+        return false;
+    }
 }

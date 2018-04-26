@@ -1,5 +1,5 @@
 #define SERVERIPADDR "127.0.0.1"
 #define SERVERPORT 8001
 #define MAXBUFSIZE 4096
-#define MSGOFFSET sizeof(int)*2
-#define MAXSTRINGLEN MAXBUFSIZE-MSGOFFSET-1
+#define HEADERLEN (sizeof(int)*3+sizeof(char))
+#define MAXSTRINGLEN (MAXBUFSIZE-HEADERLEN-1)

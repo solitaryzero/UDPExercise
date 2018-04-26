@@ -13,6 +13,8 @@
 struct Message{
     int sequenceNum;
     int length;
+    int randomId;
+    char checkSum;
     std::vector<char> data;
 };
 
@@ -40,7 +42,10 @@ public:
     struct Package recvMsg(struct sockaddr* addr);
     int sendMsg(struct Message msg, struct sockaddr* addr);
     int sendMsg(struct Package pkg, struct sockaddr* addr);
-    int sendMsg(int seq, std::string s, struct sockaddr* addr);
+    int sendMsg(int seq, int randomId, std::string s, struct sockaddr* addr);
     int shutDownSocket();
+    char genCheckSum(struct Message msg);
+    char genCheckSum(char* buf, int len);
+    bool examineCheckSum(struct Message msg);
     std::string vectorToString(std::vector<char> input);
 };
