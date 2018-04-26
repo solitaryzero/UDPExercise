@@ -3,3 +3,5 @@
 #define MAXBUFSIZE 4096
 #define HEADERLEN (sizeof(int)*3+sizeof(char))
 #define MAXSTRINGLEN (MAXBUFSIZE-HEADERLEN-1)
+#define MAXSEQNUM 10000
+#define MAXRETRY 5
