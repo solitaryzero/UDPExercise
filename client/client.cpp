@@ -58,8 +58,8 @@ void Client::startClient(){
             while ((maxCnt > 0) && (!this->packList.empty())){
                 if (this->packMap.count(this->packList.front().seq) != 0) {
                     struct PackData pd = this->packList.front();
+                    this->packList.pop_front();
                     if (timeNow - pd.startTime > MAXWAITTIME){
-                        this->packList.pop_front();
                         pd.retryCount++;
                         pd.startTime = timeNow;
                         if (pd.retryCount > MAXRETRY){
@@ -74,6 +74,10 @@ void Client::startClient(){
                             printf("#Package with seq num %d timed out. Resending for %d times...\n", pd.seq, pd.retryCount);
                             this->resendNumber(pd.seq);
                         }
+                    } else {
+                        this->listMtx.lock();
+                        this->packList.push_back(pd);
+                        this->listMtx.unlock();
                     }
                 }
                 maxCnt--;
@@ -171,7 +175,9 @@ int Client::sendNumber(int num){
     msg.data.resize(4);
     memcpy(msg.data.data(),nm.dat,4);
 
+    this.sockMtx.lock();
     int ret = this->udpSock->sendMsg(msg,(struct sockaddr*)&servAddr);
+    this.sockMtx.unlock();
     if (ret != 0){
         return -1;
     }
@@ -195,7 +201,9 @@ int Client::sendNumber(int num){
 
 int Client::resendNumber(int seq){
     struct Message msg = this->packMap[seq];
-    this->udpSock->sendMsg(msg,(struct sockaddr*)(&this->servAddr));
+    this.sockMtx.lock();
+    this->udpSock->sendMsg(msg,(struct sockaddr*)(&this->servAddr));    
+    this.sockMtx.unlock();
 }
 
 std::vector<char> Client::recvMsg(int seq){
