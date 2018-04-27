@@ -45,6 +45,8 @@ struct Package Server::recvPkg(){
 }
 
 int Server::sendString(struct Package p){
+
+    //判断是否是一个合法的数据包(内容为一个int)
     if ((p.msg.length <= HEADERLEN) || (p.msg.length-HEADERLEN != 4) || (p.msg.data.size() != 4)){
         printf("%d\n",p.msg.length-HEADERLEN);
         printf("%d\n",p.msg.data.size());
@@ -55,12 +57,15 @@ int Server::sendString(struct Package p){
     union NumberMsg nm;
     memcpy(nm.dat,p.msg.data.data(),4);
     int l = ntohl(nm.num);
+    printf("Inquiring number: %d\n",l);
 
-    if (l > MAXSTRINGLEN){
-        printf("bad string length: %d",l);
+    //判断请求的字符串长度是否合法
+    if ((l > MAXSTRINGLEN) || (l <= 0)){
+        printf("bad string length: %d\n",l);
         return 2;
     }
 
+    //通过std::random创建随机字符串
     std::vector<char> builder;
     builder.clear();
     std::random_device rd;
@@ -68,6 +73,8 @@ int Server::sendString(struct Package p){
     for (int i=0;i<l;i++){
         builder.push_back((char)(dis(rd)+(int)('A')));
     }
+
+    //根据原请求设置对应字段
     Message msg;
     msg.sequenceNum = p.msg.sequenceNum;
     msg.length = l+HEADERLEN;

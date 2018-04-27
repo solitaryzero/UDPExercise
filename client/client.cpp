@@ -8,7 +8,7 @@ void Client::startClient(){
     }
 
     this->flag = false;
-    this->nextSequenceNum = 0;
+    this->currentSequenceNum = 0;
     this->retryCount = 0;
     this->packMap.clear();
     while (!this->packList.empty()){
@@ -26,7 +26,7 @@ void Client::startClient(){
                 }
                 if (i <= 0) continue;
                 if (this->sendNumber(i) == 0){
-                    printf("Successfully sent number with seq num %d: %d\n",this->nextSequenceNum-1, i);
+                    printf("Successfully sent number with seq num %d: %d\n",this->currentSequenceNum-1, i);
                 }
             }
         }
@@ -58,18 +58,17 @@ void Client::startClient(){
                 this->flag = true;
                 break;
             }
-            if (i <= 0) continue;
-            if ((se = this->sendNumber(i)) > 0){
+            if ((se = this->sendNumber(i)) >= 0){
                 this->retryCount = 0;
                 printf("Successfully sent number with seq num %d: %d\n",se , i);
+                this->recvRes = this->recvMsg(se);
+                if (this->recvRes.size() == 0){
+                    continue;
+                } else {
+                    s = this->udpSock->vectorToString(this->recvRes);
+                    printf("Received data from server:\n%s\n",s.c_str());
+                }
             }
-        }
-        this->recvRes = this->recvMsg(se);
-        if (this->recvRes.size() == 0){
-            continue;
-        } else {
-            s = this->udpSock->vectorToString(this->recvRes);
-            printf("Received data from server:\n%s\n",s.c_str());
         }
     }
 
@@ -96,23 +95,37 @@ UdpSocket* Client::initSocket(){
 }
 
 int Client::sendNumber(int num){
-    if (num <= 0) return 1;
+    if ((num <= 0) || (num > MAXSTRINGLEN)) {
+        perror("invalid number!");
+        return -1;
+    }
 
     struct Message msg;
     union NumberMsg nm;
 
-    msg.sequenceNum = this->nextSequenceNum;
-    if (this->packMap.count(this->nextSequenceNum) != 0){
-        perror("seq number already used!");
+    //下一个序列号是否可用?
+    int next = this->currentSequenceNum;
+    while (next != this->currentSequenceNum+MAXSEQNUM){
+        if (this->packMap.count(next%MAXSEQNUM) == 0){
+            break;
+        }
+        next = next+1;
+    }
+
+    if (next == this->currentSequenceNum+MAXSEQNUM){
+        perror("sequence number used up!");
         return -1;
     }
+
+    msg.sequenceNum = next%MAXSEQNUM;
+    this->currentSequenceNum = next%MAXSEQNUM+1;
 
     std::random_device rd;
     std::uniform_int_distribution<int> dis(0,10000);
 
     nm.num = htonl(num);
 
-    this->nextSequenceNum = (this->nextSequenceNum+1)%MAXSEQNUM;
+    //填写字段
     msg.length = 4+HEADERLEN;
     msg.randomId = dis(rd);
     msg.data.resize(4);
@@ -123,6 +136,7 @@ int Client::sendNumber(int num){
         return -1;
     }
 
+    //设置序列号对应关系
     this->packMap[msg.sequenceNum] = msg;
     PackData pd;
     pd.seq = msg.sequenceNum;
@@ -146,10 +160,11 @@ std::vector<char> Client::recvMsg(int seq){
         this->retryCount++;
         if (this->retryCount > MAXRETRY){
             printf("Too many retries, drop package.\n");
+            this->packMap.erase(pkg.msg.sequenceNum);
             return ans;
         }
         if (this->udpSock->sendMsg(this->packMap[seq],(struct sockaddr*)&servAddr) == 0){
-            printf("Package with seq num %d timed out. Resending for %d time...\n", seq, this->retryCount);
+            printf("Package with seq num %d timed out. Resending for %d times...\n", seq, this->retryCount);
             return this->recvMsg(seq);
         }
     }
