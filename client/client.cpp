@@ -15,8 +15,7 @@ void Client::startClient(){
         this->packList.pop_back();
     }
 
-/*
-    std::thread sendThread = std::thread([&](){
+   std::thread sendThread = std::thread([&](){
         int i;
         while (true){
             if (scanf("%d",&i) != -1){
@@ -25,8 +24,8 @@ void Client::startClient(){
                     break;
                 }
                 if (i <= 0) continue;
-                if (this->sendNumber(i) == 0){
-                    printf("Successfully sent number with seq num %d: %d\n",this->currentSequenceNum-1, i);
+                if (this->sendNumber(i) >= 0){
+                    printf("*Successfully sent number with seq num %d: %d\n",this->currentSequenceNum-1, i);
                 }
             }
         }
@@ -36,20 +35,60 @@ void Client::startClient(){
         std::string s;
         while (true){
             if (this->flag) break;
-            this->recvRes = this->recvMsg();
+            this->recvRes = this->recvMsg(0);
             if (this->recvRes.size() == 0){
                 continue;
             } else {
                 s = this->udpSock->vectorToString(this->recvRes);
-                printf("Received data from server:\n%s\n",s.c_str());
+                printf("*Received data from server:\n%s\n",s.c_str());
             }
+        }
+    });
+
+    std::thread listManageThread = std::thread([&](){
+        while (true){
+            while ((!this->packList.empty()) && (this->packMap.count(this->packList.front().seq) == 0)){
+                this->listMtx.lock();
+                this->packList.pop_front();
+                this->listMtx.unlock();
+            }
+
+            time_t timeNow = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            int maxCnt = this->packList.size();
+            while ((maxCnt > 0) && (!this->packList.empty())){
+                if (this->packMap.count(this->packList.front().seq) != 0) {
+                    struct PackData pd = this->packList.front();
+                    if (timeNow - pd.startTime > MAXWAITTIME){
+                        this->packList.pop_front();
+                        pd.retryCount++;
+                        pd.startTime = timeNow;
+                        if (pd.retryCount > MAXRETRY){
+                            this->mapMtx.lock();
+                            this->packMap.erase(pd.retryCount);
+                            printf("#Too many retries, drop package No.%d .\n", pd.seq);
+                            this->mapMtx.unlock();
+                        } else {
+                            this->listMtx.lock();
+                            this->packList.push_back(pd);
+                            this->listMtx.unlock();
+                            printf("#Package with seq num %d timed out. Resending for %d times...\n", pd.seq, pd.retryCount);
+                            this->resendNumber(pd.seq);
+                        }
+                    }
+                }
+                maxCnt--;
+            }
+
+            sleep(1);
         }
     });
 
     sendThread.join();
     recvThread.join();
-*/
+    listManageThread.join();
 
+/*  
+    // below are code for blocking send and receive.
     int i,se;
     std::string s;
     while (true){
@@ -60,17 +99,18 @@ void Client::startClient(){
             }
             if ((se = this->sendNumber(i)) >= 0){
                 this->retryCount = 0;
-                printf("Successfully sent number with seq num %d: %d\n",se , i);
+                printf("*Successfully sent number with seq num %d: %d\n",se , i);
                 this->recvRes = this->recvMsg(se);
                 if (this->recvRes.size() == 0){
                     continue;
                 } else {
                     s = this->udpSock->vectorToString(this->recvRes);
-                    printf("Received data from server:\n%s\n",s.c_str());
+                    printf("*Received data from server:\n%s\n",s.c_str());
                 }
             }
         }
     }
+*/
 
     this->udpSock->shutDownSocket();
     delete(this->udpSock);
@@ -137,37 +177,53 @@ int Client::sendNumber(int num){
     }
 
     //设置序列号对应关系
+    this->mapMtx.lock();
     this->packMap[msg.sequenceNum] = msg;
+    this->mapMtx.unlock();
+
     PackData pd;
     pd.seq = msg.sequenceNum;
     pd.retryCount = 0;
-    pd.waitTime = MAXWAITTIME;
+    pd.startTime = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-    this->mtx.lock();
+    this->listMtx.lock();
     this->packList.push_back(pd);
-    this->mtx.unlock();
+    this->listMtx.unlock();
 
     return msg.sequenceNum;
 }
 
+int Client::resendNumber(int seq){
+    struct Message msg = this->packMap[seq];
+    this->udpSock->sendMsg(msg,(struct sockaddr*)(&this->servAddr));
+}
+
 std::vector<char> Client::recvMsg(int seq){
-    struct Package pkg = this->udpSock->recvMsgWithTimeOut();
     std::vector<char> ans;
     ans.resize(0);
+
+    /*
+    // below are code for blocking send and receive.
+    struct Package pkg = this->udpSock->recvMsgWithTimeOut();
 
     //超时
     if (pkg.msg.length == -2){
         this->retryCount++;
         if (this->retryCount > MAXRETRY){
-            printf("Too many retries, drop package.\n");
-            this->packMap.erase(pkg.msg.sequenceNum);
+            printf("#Too many retries, drop packagev No.%d .\n", seq);
+                this->mapMtx.lock();
+                this->packMap.erase(pkg.msg.sequenceNum);
+                this->mapMtx.unlock();
             return ans;
         }
         if (this->udpSock->sendMsg(this->packMap[seq],(struct sockaddr*)&servAddr) == 0){
-            printf("Package with seq num %d timed out. Resending for %d times...\n", seq, this->retryCount);
+            printf("#Package with seq num %d timed out. Resending for %d times...\n", seq, this->retryCount);
             return this->recvMsg(seq);
         }
     }
+    */
+
+    struct Package pkg = this->udpSock->recvMsg();
 
     //检测来源是否正确
     if ((pkg.peerAddr.sin_port != this->servAddr.sin_port) || 
@@ -200,9 +256,12 @@ std::vector<char> Client::recvMsg(int seq){
     }
 
     int strLen = *(int*)(this->packMap[pkg.msg.sequenceNum].data.data());
-    printf("Received response with sequence number %d, aka string with length of %d\n", 
+    printf("*Received response with sequence number %d, aka string with length of %d\n", 
     pkg.msg.sequenceNum,ntohl(strLen));
+    
+    this->mapMtx.lock();
     this->packMap.erase(pkg.msg.sequenceNum);
+    this->mapMtx.unlock();
 
     ans = pkg.msg.data;
     return ans;
