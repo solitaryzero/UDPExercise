@@ -9,8 +9,13 @@ void Client::startClient(){
 
     this->flag = false;
     this->nextSequenceNum = 0;
+    this->retryCount = 0;
     this->packMap.clear();
+    while (!this->packList.empty()){
+        this->packList.pop_back();
+    }
 
+/*
     std::thread sendThread = std::thread([&](){
         int i;
         while (true){
@@ -21,7 +26,7 @@ void Client::startClient(){
                 }
                 if (i <= 0) continue;
                 if (this->sendNumber(i) == 0){
-                    printf("Successfully sent number: %d\n",i);
+                    printf("Successfully sent number with seq num %d: %d\n",this->nextSequenceNum-1, i);
                 }
             }
         }
@@ -43,6 +48,30 @@ void Client::startClient(){
 
     sendThread.join();
     recvThread.join();
+*/
+
+    int i,se;
+    std::string s;
+    while (true){
+        if (scanf("%d",&i) != -1){
+            if (i == -1){
+                this->flag = true;
+                break;
+            }
+            if (i <= 0) continue;
+            if ((se = this->sendNumber(i)) > 0){
+                this->retryCount = 0;
+                printf("Successfully sent number with seq num %d: %d\n",se , i);
+            }
+        }
+        this->recvRes = this->recvMsg(se);
+        if (this->recvRes.size() == 0){
+            continue;
+        } else {
+            s = this->udpSock->vectorToString(this->recvRes);
+            printf("Received data from server:\n%s\n",s.c_str());
+        }
+    }
 
     this->udpSock->shutDownSocket();
     delete(this->udpSock);
@@ -71,11 +100,18 @@ int Client::sendNumber(int num){
 
     struct Message msg;
     union NumberMsg nm;
+
+    msg.sequenceNum = this->nextSequenceNum;
+    if (this->packMap.count(this->nextSequenceNum) != 0){
+        perror("seq number already used!");
+        return -1;
+    }
+
     std::random_device rd;
     std::uniform_int_distribution<int> dis(0,10000);
 
     nm.num = htonl(num);
-    msg.sequenceNum = this->nextSequenceNum;
+
     this->nextSequenceNum = (this->nextSequenceNum+1)%MAXSEQNUM;
     msg.length = 4+HEADERLEN;
     msg.randomId = dis(rd);
@@ -84,15 +120,39 @@ int Client::sendNumber(int num){
 
     int ret = this->udpSock->sendMsg(msg,(struct sockaddr*)&servAddr);
     if (ret != 0){
-        return 1;
+        return -1;
     }
-    return 0;
+
+    this->packMap[msg.sequenceNum] = msg;
+    PackData pd;
+    pd.seq = msg.sequenceNum;
+    pd.retryCount = 0;
+    pd.waitTime = MAXWAITTIME;
+
+    this->mtx.lock();
+    this->packList.push_back(pd);
+    this->mtx.unlock();
+
+    return msg.sequenceNum;
 }
 
-std::vector<char> Client::recvMsg(){
-    struct Package pkg = this->udpSock->recvMsg();
+std::vector<char> Client::recvMsg(int seq){
+    struct Package pkg = this->udpSock->recvMsgWithTimeOut();
     std::vector<char> ans;
     ans.resize(0);
+
+    //超时
+    if (pkg.msg.length == -2){
+        this->retryCount++;
+        if (this->retryCount > MAXRETRY){
+            printf("Too many retries, drop package.\n");
+            return ans;
+        }
+        if (this->udpSock->sendMsg(this->packMap[seq],(struct sockaddr*)&servAddr) == 0){
+            printf("Package with seq num %d timed out. Resending for %d time...\n", seq, this->retryCount);
+            return this->recvMsg(seq);
+        }
+    }
 
     //检测来源是否正确
     if ((pkg.peerAddr.sin_port != this->servAddr.sin_port) || 
@@ -111,6 +171,23 @@ std::vector<char> Client::recvMsg(){
         perror("invalid data!");
         return ans;
     }
+
+    //检测是否发送了该请求
+    if (this->packMap.count(pkg.msg.sequenceNum) == 0){
+        perror("unexpected message!");
+        return ans;
+    }
+
+    //检测随机数是否一致
+    if (this->packMap[pkg.msg.sequenceNum].randomId != pkg.msg.randomId){
+        perror("bad random id!");
+        return ans;
+    }
+
+    int strLen = *(int*)(this->packMap[pkg.msg.sequenceNum].data.data());
+    printf("Received response with sequence number %d, aka string with length of %d\n", 
+    pkg.msg.sequenceNum,ntohl(strLen));
+    this->packMap.erase(pkg.msg.sequenceNum);
 
     ans = pkg.msg.data;
     return ans;

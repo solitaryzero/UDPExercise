@@ -38,7 +38,9 @@ private:
 public:
     UdpSocket();
     UdpSocket(int sockfd);
+    int initSocket();
     struct Package recvMsg();
+    struct Package recvMsgWithTimeOut();
     struct Package recvMsg(struct sockaddr* addr);
     int sendMsg(struct Message msg, struct sockaddr* addr);
     int sendMsg(struct Package pkg, struct sockaddr* addr);

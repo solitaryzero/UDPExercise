@@ -69,7 +69,7 @@ int Server::sendString(struct Package p){
         builder.push_back((char)(dis(rd)+(int)('A')));
     }
     Message msg;
-    msg.sequenceNum = 1;
+    msg.sequenceNum = p.msg.sequenceNum;
     msg.length = l+HEADERLEN;
     msg.randomId = p.msg.randomId;
     msg.data = builder;

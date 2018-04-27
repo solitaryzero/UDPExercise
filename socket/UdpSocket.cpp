@@ -6,6 +6,15 @@ UdpSocket::UdpSocket(){
 
 UdpSocket::UdpSocket(int sockfd){
     this->sockfd = sockfd;
+    initSocket();
+}
+
+int UdpSocket::initSocket(){
+    int reuseFlag = 1;
+    setsockopt(this->sockfd,SOL_SOCKET,SO_REUSEADDR,&reuseFlag,sizeof(reuseFlag)); 
+    setsockopt(this->sockfd,SOL_SOCKET,SO_REUSEPORT,&reuseFlag,sizeof(reuseFlag)); 
+
+    return 0;
 }
 
 struct Package UdpSocket::recvMsg(){
@@ -51,6 +60,23 @@ struct Package UdpSocket::recvMsg(){
     pkg.peerAddr = addr;
 
     return pkg;
+}
+
+struct Package UdpSocket::recvMsgWithTimeOut(){
+    struct timeval tv;
+    fd_set readfds;
+    FD_ZERO(&readfds); 
+    FD_SET(this->sockfd,&readfds);
+    tv.tv_sec=MAXWAITTIME; tv.tv_usec=0;
+    if (select(this->sockfd+1,&readfds,NULL,NULL,&tv) > 0) {
+        if (FD_ISSET(this->sockfd,&readfds)){
+            return recvMsg();
+        }
+    } else {
+        Package pkg;
+        pkg.msg.length = -2;
+        return pkg;
+    }
 }
 
 struct Package UdpSocket::recvMsg(struct sockaddr* addr){
