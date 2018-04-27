@@ -175,9 +175,9 @@ int Client::sendNumber(int num){
     msg.data.resize(4);
     memcpy(msg.data.data(),nm.dat,4);
 
-    this.sockMtx.lock();
+    this->sockMtx.lock();
     int ret = this->udpSock->sendMsg(msg,(struct sockaddr*)&servAddr);
-    this.sockMtx.unlock();
+    this->sockMtx.unlock();
     if (ret != 0){
         return -1;
     }
@@ -201,9 +201,9 @@ int Client::sendNumber(int num){
 
 int Client::resendNumber(int seq){
     struct Message msg = this->packMap[seq];
-    this.sockMtx.lock();
+    this->sockMtx.lock();
     this->udpSock->sendMsg(msg,(struct sockaddr*)(&this->servAddr));    
-    this.sockMtx.unlock();
+    this->sockMtx.unlock();
 }
 
 std::vector<char> Client::recvMsg(int seq){

@@ -20,7 +20,7 @@ private:
     std::map<int,struct Message> packMap;   //每个sequence number对应的数据包（接收到回复后删除对应条目）
     std::deque<struct PackData> packList;   //待重发的数据包队列
     std::vector<char> recvRes;              //收到的回复中数据字段
-    std::mutex mapMtx, listMtx，sockMtx;    //互斥锁
+    std::mutex mapMtx, listMtx, sockMtx;    //互斥锁
     int currentSequenceNum;                 //当前使用的序列号
     int retryCount;                         //当前数据包已重传次数
     bool flag;                              //是否退出程序(输入-1退出)
