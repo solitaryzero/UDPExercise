@@ -1,3 +1,6 @@
+#ifndef CLIENT_H
+#define CLIENT_H
+
 #include "../socket/UdpSocket.h"
 #include <thread>
 #include <random>
@@ -33,3 +36,5 @@ private:
 public:
     void startClient();                     //初始化客户端
 };
+
+#endif

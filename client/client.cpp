@@ -25,7 +25,7 @@ void Client::startClient(){
                 }
                 if (i <= 0) continue;
                 if (this->sendNumber(i) >= 0){
-                    printf("*Successfully sent number with seq num %d: %d\n",this->currentSequenceNum-1, i);
+                    printf("* Successfully sent number with seq num %d: %d\n",this->currentSequenceNum-1, i);
                 }
             }
         }
@@ -40,7 +40,7 @@ void Client::startClient(){
                 continue;
             } else {
                 s = this->udpSock->vectorToString(this->recvRes);
-                printf("*Received data from server:\n%s\n",s.c_str());
+                printf("* Received data from server:\n%s\n",s.c_str());
             }
         }
     });
@@ -64,14 +64,14 @@ void Client::startClient(){
                         pd.startTime = timeNow;
                         if (pd.retryCount > MAXRETRY){
                             this->mapMtx.lock();
-                            this->packMap.erase(pd.retryCount);
-                            printf("#Too many retries, drop package No.%d .\n", pd.seq);
+                            this->packMap.erase(pd.seq);
+                            printf("# Too many retries, drop package No.%d .\n", pd.seq);
                             this->mapMtx.unlock();
                         } else {
                             this->listMtx.lock();
                             this->packList.push_back(pd);
                             this->listMtx.unlock();
-                            printf("#Package with seq num %d timed out. Resending for %d times...\n", pd.seq, pd.retryCount);
+                            printf("# Package with seq num %d timed out. Resending for %d times...\n", pd.seq, pd.retryCount);
                             this->resendNumber(pd.seq);
                         }
                     } else {
@@ -103,13 +103,13 @@ void Client::startClient(){
             }
             if ((se = this->sendNumber(i)) >= 0){
                 this->retryCount = 0;
-                printf("*Successfully sent number with seq num %d: %d\n",se , i);
+                printf("* Successfully sent number with seq num %d: %d\n",se , i);
                 this->recvRes = this->recvMsg(se);
                 if (this->recvRes.size() == 0){
                     continue;
                 } else {
                     s = this->udpSock->vectorToString(this->recvRes);
-                    printf("*Received data from server:\n%s\n",s.c_str());
+                    printf("* Received data from server:\n%s\n",s.c_str());
                 }
             }
         }
@@ -218,14 +218,14 @@ std::vector<char> Client::recvMsg(int seq){
     if (pkg.msg.length == -2){
         this->retryCount++;
         if (this->retryCount > MAXRETRY){
-            printf("#Too many retries, drop packagev No.%d .\n", seq);
+            printf("# Too many retries, drop packagev No.%d .\n", seq);
                 this->mapMtx.lock();
                 this->packMap.erase(pkg.msg.sequenceNum);
                 this->mapMtx.unlock();
             return ans;
         }
         if (this->udpSock->sendMsg(this->packMap[seq],(struct sockaddr*)&servAddr) == 0){
-            printf("#Package with seq num %d timed out. Resending for %d times...\n", seq, this->retryCount);
+            printf("# Package with seq num %d timed out. Resending for %d times...\n", seq, this->retryCount);
             return this->recvMsg(seq);
         }
     }
@@ -264,7 +264,7 @@ std::vector<char> Client::recvMsg(int seq){
     }
 
     int strLen = *(int*)(this->packMap[pkg.msg.sequenceNum].data.data());
-    printf("*Received response with sequence number %d, aka string with length of %d\n", 
+    printf("* Received response with sequence number %d, aka string with length of %d\n", 
     pkg.msg.sequenceNum,ntohl(strLen));
     
     this->mapMtx.lock();

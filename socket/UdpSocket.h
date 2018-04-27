@@ -1,3 +1,6 @@
+#ifndef UDPSOCKET_H
+#define UDPSOCKET_H
+
 #include "../common.h"
   
 #include <stdio.h>  
@@ -52,3 +55,5 @@ public:
     bool examineCheckSum(struct Message msg);   //检测msg的校验和是否合法
     std::string vectorToString(std::vector<char> input);    //将vector<char>转换为std::string
 };
+
+#endif
